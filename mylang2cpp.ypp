@@ -1,0 +1,238 @@
+%{
+ #include "word.h"
+ #include "sentence.h"
+ #include "literal.h"
+ #include "mylang2cpp.tab.hpp"
+ #include <iostream>
+ #include <vector>
+ #include <string>
+ #include <map>
+ using namespace std;
+
+#define IFSTAT(a)   if(a){
+#define ENDIF       }
+#define ELSESTAT(a) if(a){}else{
+#define ENDELSE     }
+#define LOOPSTAT(a)   while(a--){
+#define LOOPBLOCK       } 
+#define WHILESTAT(a)   if(!a) goto end
+#define WHILEBLOCK     end:
+
+#define _I_ 0
+#define _C_ 1
+#define _S_ 2
+#define _W_ 3
+map<string, Literal* > vars;
+
+void yyerror(const char *s);
+int yylex(void);
+
+typedef void * label;
+
+map     <string,Word*> WORDS;
+map     <string,Sentence*> SENTS;
+map     <string, char*>  CHARS;
+map     <string, int*>   NUMS;
+map      <string,label> LABELS;
+
+vector<string> stack;
+vector<string> ids;
+
+%}
+%define parse.error verbose
+
+%union{Literal* l ;int num ;}
+%start start
+%token EXIT OPAREN CPAREN OBRAC CBRAC LOOP WHILE INPUT IF ELSE GT LT GEQ LEQ EQ NOT OUTPUT SEMI W_DECL S_DECL C_DECL N_DECL ASS CONCAT PLUS MINUS IDX COMMA
+%token <l> ID C_ID N_ID S_ID  W_ID WORD SENT CH NUM
+%type <l>   S_VAL W_VAL C_VAL C_EXP S_EXP W_EXP 
+%type <l> N_EXP N_VAL  B_EXP
+%type  stat  exp assing decl output ids  input  loop  while    
+
+%right  ASS
+%right IDX
+%left MINUS PLUS
+%left CONCAT
+
+%%
+
+start           : stat start                       {;}
+                | stat                             {;}
+                | EXIT  SEMI                       {return 0;}
+                ;
+
+bstat           
+                :      exp          SEMI bstat                  {;}
+                |      exp                                      {;}
+                |      assing       SEMI bstat                  {;}
+                |      assing       SEMI                        {;}
+                |      decl         SEMI bstat                  {;}
+                |      decl         SEMI                        {;}
+                |      output       SEMI bstat                  {;}
+                |      output       SEMI                        {;}
+                |      input        SEMI bstat                  {;}
+                |      input        SEMI                        {;}
+                |      loop         bstat                       {;}
+                |      loop                                     {;}
+                |      while        bstat                       {;}
+                |      while                                    {;}
+                |      ifstat      bstat                        {;}
+                |      ifstat                                   {;}                ;
+
+
+stat            :      exp          SEMI                    {while(!stack.empty()){cout << stack.back(); stack.pop_back();}cout << ";" <<endl;}
+                |      assing       SEMI                    {while(!stack.empty()){cout << stack.back(); stack.pop_back();}cout << ";" <<endl;}
+                |      decl         SEMI                    {while(!stack.empty()){cout << stack.back(); stack.pop_back();}cout << ";" <<endl;}
+                |      output       SEMI                    {while(!stack.empty()){cout << stack.back(); stack.pop_back();}cout << ";" <<endl;}
+                |      input        SEMI                    {while(!stack.empty()){cout << stack.back(); stack.pop_back();}cout << ";" <<endl;}
+                |      loop                                 {while(!stack.empty()){cout << stack.back(); stack.pop_back();}cout << ";" <<endl;}
+                |      while                                {while(!stack.empty()){cout << stack.back(); stack.pop_back();}cout << ";" <<endl;}
+                |      ifstat                               {;}
+                ;
+
+
+
+ifstat          :       IF OPAREN B_EXP CPAREN ifstat       {cout<< "if(" + $3->line +"){" ; while(!stack.empty()){cout << stack.back(); stack.pop_back();}cout << ";" <<endl;cout <<"}";}              
+                |       OBRAC bstat CBRAC                   {;}
+                ;
+
+
+loop            :       LOOP OPAREN N_VAL CPAREN loop       {cout<< "for(int i = " + $3->line +"; i > 0; i--){" ; while(!stack.empty()){cout << stack.back(); stack.pop_back();}cout << ";" <<endl;cout <<"}";}  
+                |       OBRAC bstat CBRAC                   {;}
+           
+                ;
+
+while           :       WHILE OPAREN B_EXP CPAREN while     {cout<< "while(" << $3->line <<"){" ; while(!stack.empty()){cout << stack.back(); stack.pop_back();}cout << ";" <<endl;cout <<"}";}                                    
+                |       OBRAC bstat CBRAC                   {;}
+                ;
+
+decl            :       W_DECL ids                      {string tmp = "Word ";for(auto id :ids)     {vars[id] =new Literal (id, "",_W_); tmp.append(id);};ids.clear();stack.push_back(tmp);}  
+                |       S_DECL ids                      {string tmp = "Sentence ";for(auto id :ids) {vars[id] =new Literal (id, "",_S_); tmp.append(id);};ids.clear();stack.push_back(tmp);}
+                |       C_DECL ids                      {string tmp = "char ";for(auto id :ids)     {vars[id] =new Literal (id, "",_C_); tmp.append(id);};ids.clear();stack.push_back(tmp);}
+                |       N_DECL ids                      {string tmp = "int ";for(auto id :ids)      {vars[id] =new Literal (id, "",_I_); tmp.append(id);};ids.clear();stack.push_back(tmp);}
+                |       C_DECL ID ASS C_EXP             {$2->type = _C_;$2->line = $4->line; vars[$2->name] = $2; string tmp = "char " + $2->name +      "="+ $4->line; stack.push_back(tmp);}
+                |       W_DECL ID ASS W_EXP             {$2->type =_W_ ;$2->line = $4->line; vars[$2->name] = $2; string tmp = "Word " + $2->name +      "="+ $4->line; stack.push_back(tmp);}
+                |       S_DECL ID ASS S_EXP             {$2->type =_S_ ;$2->line = $4->line; vars[$2->name] = $2;string tmp = "Sentence " + $2->name +  "="+ $4->line; stack.push_back(tmp);}
+                |       N_DECL ID ASS N_EXP             {$2->type = _I_;$2->line = $4->line; vars[$2->name] = $2;string tmp = "int " + $2->name +       "="+ $4->line; stack.push_back(tmp);}
+                ;
+
+ids             :       ID COMMA ids                  {ids.insert(ids.begin(),", " );ids.insert(ids.begin(),$1->name );}
+                |       ID                            {ids.insert(ids.begin(),$1->name);}
+                ;
+
+output          :       OUTPUT W_EXP                 {stack.push_back("cout <<"+ $2->line);}
+                |       OUTPUT S_EXP                 {stack.push_back("cout <<"+ $2->line);}
+                |       OUTPUT N_EXP                 {stack.push_back("cout <<"+ $2->line);}
+                |       OUTPUT C_EXP                 {stack.push_back("cout <<"+ $2->line);}
+                ;
+
+input           :       INPUT S_EXP S_ID          {stack.push_back("cout << "+$2->line+"; cin >> " + $3->name);}   
+                |       INPUT S_EXP W_ID          {stack.push_back("cout << "+$2->line+"; cin >> " + $3->name);}   
+                |       INPUT S_EXP C_ID          {stack.push_back("cout << "+$2->line+"; cin >> " + $3->name);}   
+                |       INPUT S_EXP N_ID          {stack.push_back("cout << "+$2->line+"; cin >> " + $3->name);}   
+                ;
+
+assing          :       S_ID ASS S_EXP             {$3-> name = $1-> name;vars[$1->name]=$3;stack.push_back($1->name + " = "+$3->line);}  
+                |       W_ID ASS W_EXP             {$3-> name = $1-> name;vars[$1->name]=$3;stack.push_back($1->name + " = "+$3->line );}  
+                |       C_ID ASS C_EXP             {$3-> name = $1-> name;vars[$1->name]=$3;stack.push_back($1->name + " = "+$3->line );}  
+                |       N_ID ASS N_EXP             {$3-> name = $1-> name;vars[$1->name]=$3;stack.push_back($1->name + "= " +$3->line );}  
+                ;
+
+exp             :        S_EXP                       
+                |        W_EXP                       
+                |        C_EXP                       
+                ;
+
+S_EXP           :       S_VAL CONCAT S_EXP     {$$->line =$1->line + " + "+ $3 ->line;}      
+                |       S_VAL CONCAT W_EXP     {$$->line =$1->line + " + "+ $3 ->line;}      
+                |       S_EXP MINUS W_EXP      {$$->line =$1->line + " - "+ $3 ->line;}      
+                |       S_EXP MINUS C_VAL      {$$->line =$1->line + " - "+ $3 ->line;}      
+                |       S_VAL                  {$$=$1;;}      
+                ;
+
+W_EXP           :       W_EXP MINUS C_EXP       {$$->line= $1->line + " - " + $3 ->line;}     
+                |       W_VAL CONCAT W_EXP      {$$->line= $1->line + " + " + $3 ->line;}    
+                |       W_VAL CONCAT C_EXP      {$$->line= $1->line + " + " + $3 ->line;}   
+                |       W_EXP CONCAT C_EXP      {$$->line= $1->line + " + " + $3 ->line;}   
+                |       S_EXP IDX N_EXP         {$$->line= $1->line +"[" + $3->line +"] ";}   
+                |       W_VAL                   {$$ = $1;}   
+                ;
+
+N_EXP           :       N_EXP MINUS N_EXP     {$$->line =$1->line + " - " + $3->line;}      
+                |       N_VAL PLUS  N_EXP     {$$->line =$1->line + " + " + $3->line;}      
+                |       N_VAL                 {$$ =$1;}      
+                ;
+
+C_EXP           :       C_EXP MINUS C_VAL      {if($1->line.compare($3->line) == 0)$$->line="''";else $$ = $1;}         
+                |       W_EXP IDX N_VAL        {$$->line = $1->line + "[" + $3->line +"] ";}       
+                |       C_VAL                  {$$ =$1;}    
+                ;
+
+B_EXP           :      W_EXP EQ  W_EXP        {$$->line = $1->line + " ==  " +$3->line ;}
+                |      S_EXP EQ S_EXP         {$$->line = $1->line + " ==  " +$3->line ;}
+                |      C_EXP EQ C_EXP         {$$->line = $1->line + " ==  " +$3->line ;}
+                |      N_EXP EQ N_EXP         {$$->line = $1->line + " ==  " +$3->line ;}
+                |      W_EXP GT  W_EXP        {$$->line = $1->line + " > "  +$3->line  ;}
+                |      S_EXP GT S_EXP         {$$->line = $1->line + " > "  +$3->line  ;}
+                |      C_EXP GT C_EXP         {$$->line = $1->line + " > "  +$3->line  ;}
+                |      N_EXP GT N_EXP         {$$->line = $1->line + " > "  +$3->line  ;}
+                |      W_EXP LT  W_EXP        {$$->line = $1->line + " < "  +$3->line  ;}
+                |      S_EXP LT S_EXP         {$$->line = $1->line + " < "  +$3->line  ;}
+                |      C_EXP LT C_EXP         {$$->line = $1->line + " < "  +$3->line  ;}
+                |      N_EXP LT N_EXP         {$$->line = $1->line + " < "  +$3->line  ;}
+                |      W_EXP GEQ  W_EXP       {$$->line = $1->line + " >=  " +$3->line ;}
+                |      S_EXP GEQ S_EXP        {$$->line = $1->line + " >=  " +$3->line ;}
+                |      C_EXP GEQ C_EXP        {$$->line = $1->line + " >=  " +$3->line ;}
+                |      N_EXP GEQ N_EXP        {$$->line = $1->line + " >=  " +$3->line ;}
+                |      W_EXP LEQ  W_EXP       {$$->line = $1->line + " <=  " +$3->line ;}
+                |      S_EXP LEQ S_EXP        {$$->line = $1->line + " <=  " +$3->line ;}
+                |      C_EXP LEQ C_EXP        {$$->line = $1->line + " <=  " +$3->line ;}
+                |      N_EXP LEQ N_EXP        {$$->line = $1->line + " <=  " +$3->line ;}
+                |      NOT B_EXP              {$$->line = "!" + $2->line;}      
+                |      S_ID                   {$$->line = "!" + $1->name + ".is_empty()";}
+                |      W_ID                   {$$->line = "!" + $1->name + ".is_empty()";}
+                |      C_ID                   {$$->line = vars[$1->name]->line;}
+                |      N_ID                   {$$ ->line = $1->line;}
+                ;   
+
+
+
+
+N_VAL           :       NUM                 {$$=$1;}                             
+                |       N_ID                {$1->line = $1->name;$$ =$1;}        
+                ;
+
+W_VAL           :       WORD                {$$->line = "Word(" +$1->line + ") ";}               
+                |       W_ID                {$1->line = $1->name;$$ =$1;}              
+                ;
+
+S_VAL           :      S_ID                {$1->line = $1->name;$$ =$1;}                
+                |      SENT                {$$->line = "Sentence(string(\"" +$1->line + "\")) ";}              
+                ;
+
+C_VAL           :      CH                  {$1->line =  $1->line ;$$ =$1;}                     
+                |      C_ID                {$$ = $1;}                   
+                ;
+
+
+%%
+void yyerror (char const *s) {
+   fprintf (stderr, "%s\n", s);
+}
+
+int main(void) {
+
+    FILE* f = freopen("mylang.cpp", "w+", stdout);          
+    cout <<   "#include \"word.h\"" <<endl;
+    cout <<   "#include \"sentence.h\""<<endl;
+    cout <<   "#include <iostream>"<<endl;
+    cout <<   "#include <vector>"<<endl;
+    cout <<   "#include <string>"<<endl;
+    cout <<   "#include <map>"<<endl;    
+    cout <<   "using namespace std;" <<endl;
+    cout <<   "int main(void){" <<endl;
+    int exitcode = yyparse();
+    cout << "}";
+    fclose(f);
+    return exitcode;
+}

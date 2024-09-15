@@ -1,0 +1,7 @@
+word w1;
+sentence s1, adverb;
+loop (3){adverb = adverb # "very";}
+w1 = "interesting";
+s1 = ^Compilers are a^ # adverb # w1;
+output s1 # "topic";
+exit;~

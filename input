@@ -1,0 +1,10 @@
+word article, object, notVowel;
+input ^what are you holding?^ object;
+char o = object:0;
+notVowel = notVowel # o;
+notVowel = notVowel - 'a' - 'e' - 'i' - 'o' - 'u';
+sentence s1 = ^You are holding^;
+if (notVowel) {article="a";}
+if(!notVowel) {article="an";}
+output s1 # article # object;
+exit;
